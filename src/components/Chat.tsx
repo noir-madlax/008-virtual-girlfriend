@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { PersonaProfile } from '@/lib/persona';
 import { STAGES } from '@/lib/state-machine';
-import { saveUserData, loadUserData, UserData } from '@/lib/client-store';
+import { supabase } from '@/lib/supabase';
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
@@ -23,10 +23,12 @@ interface EmotionalState {
 interface Props {
   persona: PersonaProfile;
   initialState: EmotionalState;
+  userId: string;
   onReset: () => void;
+  onLogout: () => void;
 }
 
-export default function Chat({ persona, initialState, onReset }: Props) {
+export default function Chat({ persona, initialState, userId, onReset, onLogout }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -35,43 +37,36 @@ export default function Chat({ persona, initialState, onReset }: Props) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  useEffect(() => { scrollToBottom(); }, [messages]);
 
+  // 加载历史消息
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    const loadMessages = async () => {
+      const { data } = await supabase
+        .from('messages')
+        .select('role, content, created_at')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: true })
+        .limit(100);
 
-  // 加载历史
-  useEffect(() => {
-    const data = loadUserData();
-    if (data?.messages?.length) {
-      setMessages(data.messages as Message[]);
-      if (data.state) {
-        setState({
-          affinity: data.state.affinity,
-          trust: data.state.trust,
-          conflict: data.state.conflict,
-          mood: data.state.mood,
-          initiative: data.state.initiative,
-          stage: data.state.stage,
-          day: Math.floor(
-            (Date.now() - new Date(data.state.createdAt).getTime()) / (1000 * 60 * 60 * 24)
-          ),
-        });
+      if (data?.length) {
+        setMessages(data.map(m => ({ role: m.role as any, content: m.content })));
       }
-    }
-  }, []);
+    };
+    loadMessages();
+  }, [userId]);
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
-
     const userMessage = input.trim();
     setInput('');
     const newMessages: Message[] = [...messages, { role: 'user', content: userMessage }];
     setMessages(newMessages);
     setLoading(true);
+
+    // 保存用户消息
+    await supabase.from('messages').insert({ user_id: userId, role: 'user', content: userMessage });
 
     try {
       const res = await fetch('/api/chat', {
@@ -90,29 +85,28 @@ export default function Chat({ persona, initialState, onReset }: Props) {
       if (data.error) {
         setMessages([...newMessages, { role: 'system', content: `出错了: ${data.error}` }]);
       } else {
-        const allMessages = [...newMessages, { role: 'assistant' as const, content: data.message }];
+        const assistantMsg = { role: 'assistant' as const, content: data.message };
+        const allMessages = [...newMessages, assistantMsg];
         setMessages(allMessages);
         setState(data.state);
 
-        if (data.stageTransition) {
-          setMessages([
-            ...allMessages,
-            { role: 'system' as const, content: `✨ 关系变化: ${data.stageTransition}` },
-          ]);
-        }
+        // 保存助手消息
+        await supabase.from('messages').insert({ user_id: userId, role: 'assistant', content: data.message });
 
-        // 持久化到 localStorage
-        saveUserData({
-          userId: Date.now(),
-          nickname: '',
-          persona,
-          state: {
-            ...data.state,
-            createdAt: loadUserData()?.state?.createdAt || new Date().toISOString(),
-          },
-          messages: allMessages,
-          memories: [],
-        });
+        // 更新 profile 状态
+        await supabase.from('profiles').update({
+          affinity: data.state.affinity,
+          trust: data.state.trust,
+          conflict: data.state.conflict,
+          mood: data.state.mood,
+          initiative: data.state.initiative,
+          stage: data.state.stage,
+          updated_at: new Date().toISOString(),
+        }).eq('user_id', userId);
+
+        if (data.stageTransition) {
+          setMessages([...allMessages, { role: 'system', content: `✨ 关系变化: ${data.stageTransition}` }]);
+        }
       }
     } catch (err: any) {
       setMessages([...newMessages, { role: 'system', content: '网络出错了，再试一次？' }]);
@@ -123,10 +117,7 @@ export default function Chat({ persona, initialState, onReset }: Props) {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   };
 
   return (
@@ -146,18 +137,11 @@ export default function Chat({ persona, initialState, onReset }: Props) {
           </div>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={() => setShowState(!showState)}
-            className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors px-2 py-1"
-          >
+          <button onClick={() => setShowState(!showState)} className="text-xs text-zinc-600 hover:text-zinc-400 px-2 py-1">
             {showState ? '收起' : '状态'}
           </button>
-          <button
-            onClick={onReset}
-            className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors px-2 py-1"
-          >
-            重来
-          </button>
+          <button onClick={onReset} className="text-xs text-zinc-600 hover:text-zinc-400 px-2 py-1">重来</button>
+          <button onClick={onLogout} className="text-xs text-zinc-600 hover:text-zinc-400 px-2 py-1">退出</button>
         </div>
       </div>
 
@@ -188,9 +172,7 @@ export default function Chat({ persona, initialState, onReset }: Props) {
           </div>
         )}
 
-        {messages.map((msg, i) => (
-          <MessageBubble key={i} message={msg} />
-        ))}
+        {messages.map((msg, i) => <MessageBubble key={i} message={msg} />)}
 
         {loading && (
           <div className="flex gap-1.5 px-3 py-2">
@@ -199,7 +181,6 @@ export default function Chat({ persona, initialState, onReset }: Props) {
             <span className="w-2 h-2 bg-zinc-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
           </div>
         )}
-
         <div ref={messagesEndRef} />
       </div>
 
@@ -207,20 +188,13 @@ export default function Chat({ persona, initialState, onReset }: Props) {
       <div className="px-4 py-3 border-t border-zinc-900">
         <div className="flex gap-2 items-end">
           <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="说点什么……"
-            rows={1}
-            className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors resize-none text-sm"
+            ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
+            placeholder="说点什么……" rows={1}
+            className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600 resize-none text-sm"
             style={{ minHeight: '40px', maxHeight: '120px' }}
           />
-          <button
-            onClick={sendMessage}
-            disabled={!input.trim() || loading}
-            className="bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-900 disabled:text-zinc-700 text-zinc-200 rounded-lg px-4 py-2 transition-colors text-sm"
-          >
+          <button onClick={sendMessage} disabled={!input.trim() || loading}
+            className="bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-900 disabled:text-zinc-700 text-zinc-200 rounded-lg px-4 py-2 text-sm">
             发送
           </button>
         </div>
@@ -237,16 +211,12 @@ function MessageBubble({ message }: { message: Message }) {
       </div>
     );
   }
-
   const isUser = message.role === 'user';
-
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm leading-relaxed ${
-          isUser ? 'bg-zinc-800 text-zinc-100 rounded-br-md' : 'bg-zinc-900 text-zinc-200 rounded-bl-md'
-        }`}
-      >
+      <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm leading-relaxed ${
+        isUser ? 'bg-zinc-800 text-zinc-100 rounded-br-md' : 'bg-zinc-900 text-zinc-200 rounded-bl-md'
+      }`}>
         {message.content}
       </div>
     </div>
@@ -258,10 +228,8 @@ function StateBar({ label, value, color }: { label: string; value: number; color
     <div className="space-y-1">
       <p className="text-xs text-zinc-500">{label}</p>
       <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-        <div
-          className={`h-full ${color} rounded-full transition-all duration-500`}
-          style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
-        />
+        <div className={`h-full ${color} rounded-full transition-all duration-500`}
+          style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
       </div>
       <p className="text-xs text-zinc-600">{Math.round(value)}</p>
     </div>
