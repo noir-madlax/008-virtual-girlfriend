@@ -18,10 +18,13 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_MODEL = 'gemini-3.1-flash-lite-preview';
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-// 代理（Vercel 上不需要，本地需要）
+// 代理（仅本地开发用，Vercel 上自动跳过）
 let proxyAgent: any = undefined;
 try {
-  proxyAgent = new SocksProxyAgent('socks5://127.0.0.1:12345');
+  if (process.env.USE_PROXY === 'true') {
+    const { SocksProxyAgent } = require('socks-proxy-agent');
+    proxyAgent = new SocksProxyAgent('socks5://127.0.0.1:12345');
+  }
 } catch {}
 
 async function callGemini(systemPrompt: string, history: any[], message: string): Promise<string> {
