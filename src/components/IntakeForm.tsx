@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 interface Props {
-  onComplete: (result: any) => void;
+  onComplete: (result: { persona: any; state: any }) => void;
 }
 
 const QUESTIONS = [
@@ -43,9 +43,7 @@ export default function IntakeForm({ onComplete }: Props) {
   const [loading, setLoading] = useState(false);
 
   const handleNicknameSubmit = () => {
-    if (nickname.trim()) {
-      setShowNickname(false);
-    }
+    if (nickname.trim()) setShowNickname(false);
   };
 
   const handleAnswer = async () => {
@@ -58,21 +56,25 @@ export default function IntakeForm({ onComplete }: Props) {
     if (step < QUESTIONS.length - 1) {
       setStep(step + 1);
     } else {
-      // 所有问题回答完毕，提交
       setLoading(true);
       try {
-        const res = await fetch('/api/user', {
+        const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            action: 'create',
             nickname,
             answers: newAnswers,
           }),
         });
         const data = await res.json();
-        onComplete(data);
-      } catch (err) {
-        console.error(err);
+        if (data.error) {
+          alert('出错了: ' + data.error);
+        } else {
+          onComplete(data);
+        }
+      } catch (err: any) {
+        alert('网络错误: ' + err.message);
       }
       setLoading(false);
     }
@@ -81,11 +83,8 @@ export default function IntakeForm({ onComplete }: Props) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (showNickname) {
-        handleNicknameSubmit();
-      } else {
-        handleAnswer();
-      }
+      if (showNickname) handleNicknameSubmit();
+      else handleAnswer();
     }
   };
 
@@ -95,9 +94,7 @@ export default function IntakeForm({ onComplete }: Props) {
         <div className="max-w-md w-full space-y-6">
           <div className="text-center space-y-2">
             <h1 className="text-2xl font-light tracking-wide">入学式</h1>
-            <p className="text-zinc-500 text-sm">
-              在认识她之前，先告诉我你是谁
-            </p>
+            <p className="text-zinc-500 text-sm">在认识她之前，先告诉我你是谁</p>
           </div>
           <div className="space-y-3">
             <input
@@ -127,7 +124,6 @@ export default function IntakeForm({ onComplete }: Props) {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-950 text-zinc-100 p-6">
       <div className="max-w-md w-full space-y-6">
-        {/* 进度 */}
         <div className="flex justify-center gap-2">
           {QUESTIONS.map((_, i) => (
             <div
@@ -139,20 +135,12 @@ export default function IntakeForm({ onComplete }: Props) {
           ))}
         </div>
 
-        {/* 问题 */}
         <div className="space-y-3 text-center">
-          <p className="text-zinc-500 text-xs">
-            {step + 1} / {QUESTIONS.length}
-          </p>
-          <h2 className="text-lg font-light leading-relaxed">
-            {q.question}
-          </h2>
-          <p className="text-zinc-600 text-sm">
-            {q.subtitle}
-          </p>
+          <p className="text-zinc-500 text-xs">{step + 1} / {QUESTIONS.length}</p>
+          <h2 className="text-lg font-light leading-relaxed">{q.question}</h2>
+          <p className="text-zinc-600 text-sm">{q.subtitle}</p>
         </div>
 
-        {/* 输入 */}
         <div className="space-y-3">
           <textarea
             value={currentAnswer}

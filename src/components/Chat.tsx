@@ -3,11 +3,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { PersonaProfile } from '@/lib/persona';
 import { STAGES } from '@/lib/state-machine';
+import { saveUserData, loadUserData, UserData } from '@/lib/client-store';
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
-  created_at?: string;
 }
 
 interface EmotionalState {
@@ -21,15 +21,16 @@ interface EmotionalState {
 }
 
 interface Props {
-  userId: number;
   persona: PersonaProfile;
+  initialState: EmotionalState;
+  onReset: () => void;
 }
 
-export default function Chat({ userId, persona }: Props) {
+export default function Chat({ persona, initialState, onReset }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [state, setState] = useState<EmotionalState | null>(null);
+  const [state, setState] = useState<EmotionalState>(initialState);
   const [showState, setShowState] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -42,61 +43,79 @@ export default function Chat({ userId, persona }: Props) {
     scrollToBottom();
   }, [messages]);
 
-  // 加载历史消息
+  // 加载历史
   useEffect(() => {
-    const loadHistory = async () => {
-      const res = await fetch(`/api/chat?userId=${userId}`);
-      const data = await res.json();
-      if (data.messages?.length > 0) {
-        setMessages(data.messages);
+    const data = loadUserData();
+    if (data?.messages?.length) {
+      setMessages(data.messages as Message[]);
+      if (data.state) {
+        setState({
+          affinity: data.state.affinity,
+          trust: data.state.trust,
+          conflict: data.state.conflict,
+          mood: data.state.mood,
+          initiative: data.state.initiative,
+          stage: data.state.stage,
+          day: Math.floor(
+            (Date.now() - new Date(data.state.createdAt).getTime()) / (1000 * 60 * 60 * 24)
+          ),
+        });
       }
-    };
-    loadHistory();
-  }, [userId]);
+    }
+  }, []);
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
 
     const userMessage = input.trim();
     setInput('');
-    setMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
+    const newMessages: Message[] = [...messages, { role: 'user', content: userMessage }];
+    setMessages(newMessages);
     setLoading(true);
 
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, message: userMessage }),
+        body: JSON.stringify({
+          action: 'chat',
+          persona,
+          state,
+          messages: newMessages,
+          message: userMessage,
+        }),
       });
       const data = await res.json();
 
       if (data.error) {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'system', content: `出错了: ${data.error}` },
-        ]);
+        setMessages([...newMessages, { role: 'system', content: `出错了: ${data.error}` }]);
       } else {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'assistant', content: data.message },
-        ]);
+        const allMessages = [...newMessages, { role: 'assistant' as const, content: data.message }];
+        setMessages(allMessages);
         setState(data.state);
 
         if (data.stageTransition) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: 'system',
-              content: `✨ 关系变化: ${data.stageTransition}`,
-            },
+          setMessages([
+            ...allMessages,
+            { role: 'system' as const, content: `✨ 关系变化: ${data.stageTransition}` },
           ]);
         }
+
+        // 持久化到 localStorage
+        saveUserData({
+          userId: Date.now(),
+          nickname: '',
+          persona,
+          state: {
+            ...data.state,
+            createdAt: loadUserData()?.state?.createdAt || new Date().toISOString(),
+          },
+          messages: allMessages,
+          memories: [],
+        });
       }
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'system', content: '网络出错了，再试一次？' },
-      ]);
+    } catch (err: any) {
+      setMessages([...newMessages, { role: 'system', content: '网络出错了，再试一次？' }]);
     }
 
     setLoading(false);
@@ -121,31 +140,35 @@ export default function Chat({ userId, persona }: Props) {
           <div>
             <p className="text-sm font-medium">{persona.name}</p>
             <p className="text-xs text-zinc-500">
-              {STAGES[state?.stage || 1]?.name || '陌生人'}
-              {state?.day !== undefined && ` · 第${state.day}天`}
+              {STAGES[state.stage]?.name || '陌生人'}
+              {state.day !== undefined && ` · 第${state.day}天`}
             </p>
           </div>
         </div>
-        <button
-          onClick={() => setShowState(!showState)}
-          className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors px-2 py-1"
-        >
-          {showState ? '收起' : '状态'}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowState(!showState)}
+            className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors px-2 py-1"
+          >
+            {showState ? '收起' : '状态'}
+          </button>
+          <button
+            onClick={onReset}
+            className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors px-2 py-1"
+          >
+            重来
+          </button>
+        </div>
       </div>
 
       {/* 状态面板 */}
-      {showState && state && (
-        <div className="px-4 py-3 border-b border-zinc-900 bg-zinc-950">
+      {showState && (
+        <div className="px-4 py-3 border-b border-zinc-900">
           <div className="grid grid-cols-5 gap-3 text-center">
             <StateBar label="亲密度" value={state.affinity} color="bg-rose-500" />
             <StateBar label="信任度" value={state.trust} color="bg-blue-500" />
             <StateBar label="矛盾值" value={state.conflict} color="bg-amber-500" />
-            <StateBar
-              label="情绪"
-              value={((state.mood + 1) / 2) * 100}
-              color="bg-emerald-500"
-            />
+            <StateBar label="情绪" value={((state.mood + 1) / 2) * 100} color="bg-emerald-500" />
             <StateBar label="主动度" value={state.initiative} color="bg-violet-500" />
           </div>
         </div>
@@ -166,7 +189,7 @@ export default function Chat({ userId, persona }: Props) {
         )}
 
         {messages.map((msg, i) => (
-          <MessageBubble key={i} message={msg} personaName={persona.name} />
+          <MessageBubble key={i} message={msg} />
         ))}
 
         {loading && (
@@ -206,19 +229,11 @@ export default function Chat({ userId, persona }: Props) {
   );
 }
 
-function MessageBubble({
-  message,
-  personaName,
-}: {
-  message: Message;
-  personaName: string;
-}) {
+function MessageBubble({ message }: { message: Message }) {
   if (message.role === 'system') {
     return (
       <div className="flex justify-center">
-        <p className="text-xs text-zinc-600 bg-zinc-900/50 px-3 py-1 rounded-full">
-          {message.content}
-        </p>
+        <p className="text-xs text-zinc-600 bg-zinc-900/50 px-3 py-1 rounded-full">{message.content}</p>
       </div>
     );
   }
@@ -229,9 +244,7 @@ function MessageBubble({
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
         className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm leading-relaxed ${
-          isUser
-            ? 'bg-zinc-800 text-zinc-100 rounded-br-md'
-            : 'bg-zinc-900 text-zinc-200 rounded-bl-md'
+          isUser ? 'bg-zinc-800 text-zinc-100 rounded-br-md' : 'bg-zinc-900 text-zinc-200 rounded-bl-md'
         }`}
       >
         {message.content}
@@ -240,15 +253,7 @@ function MessageBubble({
   );
 }
 
-function StateBar({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: number;
-  color: string;
-}) {
+function StateBar({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div className="space-y-1">
       <p className="text-xs text-zinc-500">{label}</p>
