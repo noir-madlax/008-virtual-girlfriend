@@ -269,6 +269,12 @@ export async function POST(req: NextRequest) {
           // 被吵醒后，临时调整作息
           girlfriendParams.sleepSchedule.start = (hour + 1) % 24; // 1小时后睡觉
           girlfriendParams.sleepSchedule.end = hour; // 当前时间起床
+          
+          // 添加起床气效果
+          state.mood = Math.max(-0.5, state.mood - 0.3); // 情绪下降
+          state.initiative = Math.max(0, state.initiative - 10); // 主动度下降
+          
+          console.log('女友有起床气：情绪下降，主动度下降');
         } else {
           const absenceMessage = generateAbsenceMessage(girlfriendParams, hour);
           return NextResponse.json({
