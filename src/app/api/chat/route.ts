@@ -261,14 +261,72 @@ export async function POST(req: NextRequest) {
 
       // 2. 检查是否在睡眠时间
       if (isGirlfriendSleeping(girlfriendParams, hour)) {
-        const absenceMessage = generateAbsenceMessage(girlfriendParams, hour);
-        return NextResponse.json({
-          message: absenceMessage,
-          state: state,
-          stageTransition: null,
-          quality: 0,
-          isSleeping: true,
+        // 检查是否可以被吵醒
+        const canBeWokenUp = checkCanBeWokenUp(messages, message);
+        
+        if (canBeWokenUp) {
+          console.log('女友被吵醒了！');
+          // 被吵醒后，临时调整作息
+          girlfriendParams.sleepSchedule.start = (hour + 1) % 24; // 1小时后睡觉
+          girlfriendParams.sleepSchedule.end = hour; // 当前时间起床
+        } else {
+          const absenceMessage = generateAbsenceMessage(girlfriendParams, hour);
+          return NextResponse.json({
+            message: absenceMessage,
+            state: state,
+            stageTransition: null,
+            quality: 0,
+            isSleeping: true,
+          });
+        }
+      }
+
+      // 检查是否可以被吵醒的函数
+      function checkCanBeWokenUp(messages: Array<{ role: string; content: string }>, currentMessage: string): boolean {
+        // 1. 检查是否发送了多条消息（连续发送3条以上）
+        const recentUserMessages = messages.filter(m => m.role === 'user').slice(-5);
+        if (recentUserMessages.length >= 3) {
+          return true;
+        }
+        
+        // 2. 检查是否包含吵醒关键词
+        const wakeUpKeywords = ['醒醒', '起床', '紧急', '重要', '快', '急', '马上', '立刻', '现在'];
+        for (const keyword of wakeUpKeywords) {
+          if (currentMessage.includes(keyword)) {
+            return true;
+          }
+        }
+        
+        // 3. 检查是否发送了紧急/重要消息
+        const urgentPatterns = [
+          /紧急/,
+          /重要/,
+          /急/,
+          /快/,
+          /马上/,
+          /立刻/,
+          /现在/,
+          /醒醒/,
+          /起床/,
+          /醒来/,
+        ];
+        
+        for (const pattern of urgentPatterns) {
+          if (pattern.test(currentMessage)) {
+            return true;
+          }
+        }
+        
+        // 4. 检查是否发送了多次消息（在过去5分钟内）
+        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+        const recentMessages = messages.filter(m => {
+          if (m.role !== 'user') return false;
+          // 这里需要根据消息时间戳判断，但当前没有时间戳
+          // 暂时返回false，后续可以改进
+          return false;
         });
+        
+        return false;
       }
 
       // 3. 分析消息质量
