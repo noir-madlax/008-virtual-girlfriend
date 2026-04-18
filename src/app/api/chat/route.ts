@@ -178,12 +178,17 @@ export async function POST(req: NextRequest) {
 
         // 分析当前消息
         const insight = analyzeMessage(message, now);
+        console.log('用户画像分析:', JSON.stringify(insight, null, 2));
+        
         userProfile = updateUserPattern(userProfile, insight);
+        console.log('更新后的用户画像:', JSON.stringify(userProfile, null, 2));
+        
         userProfile.totalMessages += 1;
         userProfile.lastActive = now.toISOString();
 
         // 更新Supabase中的用户画像
         try {
+          console.log('准备更新用户画像到数据库:', userId);
           await updateUserProfile(userId, {
             behavior_json: JSON.stringify(userProfile),
             occupation: userProfile.occupation,
@@ -192,6 +197,7 @@ export async function POST(req: NextRequest) {
             initiative_rate: userProfile.initiativeRate,
             mood_pattern: JSON.stringify(userProfile.moodPattern),
           });
+          console.log('用户画像更新成功');
         } catch (e) {
           console.error('Failed to update user profile:', e);
         }
