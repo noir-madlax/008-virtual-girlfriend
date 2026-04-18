@@ -118,6 +118,7 @@ export async function POST(req: NextRequest) {
       console.log('收到聊天请求:');
       console.log('  userId:', userId);
       console.log('  userId类型:', typeof userId);
+      console.log('  userId是否为undefined:', userId === undefined);
       console.log('  message:', message);
 
       if (!persona || !state || !message) {
@@ -128,6 +129,10 @@ export async function POST(req: NextRequest) {
       const hour = now.getHours();
       const dayOfWeek = now.getDay();
       const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+      // 确保userId有值，如果为undefined则使用默认值1
+      const effectiveUserId = userId !== undefined ? userId : 1;
+      console.log('使用userId:', effectiveUserId);
 
       // 1. 用户特征提取
       let userProfile: UserBehaviorPattern = {
@@ -149,10 +154,10 @@ export async function POST(req: NextRequest) {
       let girlfriendParams = getDefaultParameters();
       let evolutionState = initializeEvolutionState();
 
-      if (userId) {
+      if (effectiveUserId) {
         // 从Supabase加载用户画像
         try {
-          const profileData = await getUserProfile(userId);
+          const profileData = await getUserProfile(effectiveUserId);
           if (profileData) {
             userProfile = {
               ...userProfile,
@@ -171,7 +176,7 @@ export async function POST(req: NextRequest) {
 
         // 从Supabase加载女友参数
         try {
-          const paramsData = await getGirlfriendParams(userId);
+          const paramsData = await getGirlfriendParams(effectiveUserId);
           if (paramsData) {
             girlfriendParams = JSON.parse(paramsData.params_json || '{}');
             evolutionState.evolutionStage = paramsData.evolution_stage || 'learning';
@@ -193,8 +198,8 @@ export async function POST(req: NextRequest) {
 
         // 更新Supabase中的用户画像
         try {
-          console.log('准备更新用户画像到数据库:', userId);
-          await updateUserProfile(userId, {
+          console.log('准备更新用户画像到数据库:', effectiveUserId);
+          await updateUserProfile(effectiveUserId, {
             behavior_json: JSON.stringify(userProfile),
             occupation: userProfile.occupation,
             active_hours: JSON.stringify(userProfile.activeHours),
@@ -216,7 +221,7 @@ export async function POST(req: NextRequest) {
           // 保存进化记录
           try {
             for (const change of evolutionResult.changes) {
-              await saveEvolutionHistory(userId, {
+              await saveEvolutionHistory(effectiveUserId, {
                 parameter: change.parameter,
                 old_value: JSON.stringify(change.oldValue),
                 new_value: JSON.stringify(change.newValue),
@@ -226,7 +231,7 @@ export async function POST(req: NextRequest) {
             }
 
             // 更新女友参数
-            await updateGirlfriendParams(userId, {
+            await updateGirlfriendParams(effectiveUserId, {
               params_json: JSON.stringify(girlfriendParams),
               evolution_stage: evolutionState.evolutionStage,
               stability_score: evolutionState.stabilityScore,
