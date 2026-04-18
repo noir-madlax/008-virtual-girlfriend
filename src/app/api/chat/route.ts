@@ -239,20 +239,25 @@ export async function POST(req: NextRequest) {
                 confidence: change.confidence,
               });
             }
-
-            // 更新女友参数
-            await updateGirlfriendParams(effectiveUserId, {
-              params_json: JSON.stringify(girlfriendParams),
-              evolution_stage: evolutionState.evolutionStage,
-              stability_score: evolutionState.stabilityScore,
-              next_evolution: evolutionState.nextCheckTime.toISOString(),
-            });
-            console.log('  进化数据保存成功');
+            console.log('  进化记录保存成功');
           } catch (e) {
-            console.error('Failed to save evolution data:', e);
+            console.error('Failed to save evolution history:', e);
           }
         } else {
           console.log('  不触发进化机制');
+        }
+        
+        // 无论是否触发进化，都保存女友参数
+        try {
+          await updateGirlfriendParams(effectiveUserId, {
+            params_json: JSON.stringify(girlfriendParams),
+            evolution_stage: evolutionState.evolutionStage,
+            stability_score: evolutionState.stabilityScore,
+            next_evolution: evolutionState.nextCheckTime.toISOString(),
+          });
+          console.log('  女友参数保存成功');
+        } catch (e) {
+          console.error('Failed to save girlfriend params:', e);
         }
 
         // 调整女友参数基于用户特征
