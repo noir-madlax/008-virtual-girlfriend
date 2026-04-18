@@ -124,6 +124,9 @@ export async function getUserProfile(userId: number) {
 }
 
 export async function updateUserProfile(userId: number, profileData: any) {
+  console.log('updateUserProfile called with userId:', userId);
+  console.log('profileData:', JSON.stringify(profileData, null, 2));
+  
   const { data, error } = await supabase
     .from('user_profiles')
     .upsert({
@@ -139,6 +142,7 @@ export async function updateUserProfile(userId: number, profileData: any) {
     throw error;
   }
   
+  console.log('User profile updated successfully:', data);
   return data;
 }
 
