@@ -214,7 +214,16 @@ export async function POST(req: NextRequest) {
         }
 
         // 检查是否需要进化
-        if (shouldEvolve(evolutionState, userProfile, girlfriendParams)) {
+        console.log('检查是否需要进化...');
+        console.log('  evolutionState:', JSON.stringify(evolutionState, null, 2));
+        console.log('  userProfile.totalMessages:', userProfile.totalMessages);
+        console.log('  girlfriendParams:', JSON.stringify(girlfriendParams, null, 2));
+        
+        const shouldEvolveResult = shouldEvolve(evolutionState, userProfile, girlfriendParams);
+        console.log('  shouldEvolve结果:', shouldEvolveResult);
+        
+        if (shouldEvolveResult) {
+          console.log('  触发进化机制...');
           const evolutionResult = performEvolution(evolutionState, userProfile, girlfriendParams);
           girlfriendParams = evolutionResult.newParams;
           evolutionState = evolutionResult.newEvolutionState;
@@ -238,9 +247,12 @@ export async function POST(req: NextRequest) {
               stability_score: evolutionState.stabilityScore,
               next_evolution: evolutionState.nextCheckTime.toISOString(),
             });
+            console.log('  进化数据保存成功');
           } catch (e) {
             console.error('Failed to save evolution data:', e);
           }
+        } else {
+          console.log('  不触发进化机制');
         }
 
         // 调整女友参数基于用户特征
