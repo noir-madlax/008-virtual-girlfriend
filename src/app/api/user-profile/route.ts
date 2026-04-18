@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
     }
 
     // 获取进化历史
-    let evolutionHistory = [];
+    let evolutionHistory: any[] = [];
     try {
       const historyData = await getEvolutionHistory(userIdNum, 10);
       evolutionHistory = historyData.map((row: any) => ({
