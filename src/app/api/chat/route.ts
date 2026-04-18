@@ -10,6 +10,10 @@ import {
   EmotionalState,
   InteractionInput,
 } from '@/lib/state-machine';
+import { getDb } from '@/lib/db';
+import { analyzeMessage, updateUserPattern, UserBehaviorPattern } from '@/lib/user-profile-extractor';
+import { adjustParametersBasedOnUser, GirlfriendParameters, getDefaultParameters, generateGirlfriendStateDescription, generateReplyStyleGuide } from '@/lib/girlfriend-params';
+import { shouldEvolve, performEvolution, EvolutionState, initializeEvolutionState, generateAbsenceMessage, isGirlfriendSleeping } from '@/lib/evolution';
 
 const fetch = require('node-fetch').default || require('node-fetch');
 const { SocksProxyAgent } = require('socks-proxy-agent');
@@ -92,18 +96,149 @@ export async function POST(req: NextRequest) {
 
     if (action === 'chat') {
       // 聊天
-      const { persona, state, messages, message } = body as {
+      const { persona, state, messages, message, userId } = body as {
         persona: PersonaProfile;
         state: EmotionalState;
         messages: Array<{ role: string; content: string }>;
         message: string;
+        userId?: number;
       };
 
       if (!persona || !state || !message) {
         return NextResponse.json({ error: '缺少参数' }, { status: 400 });
       }
 
-      // 分析消息质量
+      const db = getDb();
+      const now = new Date();
+      const hour = now.getHours();
+      const dayOfWeek = now.getDay();
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+      // 1. 用户特征提取
+      let userProfile: UserBehaviorPattern = {
+        activeHours: [],
+        sleepHours: null,
+        avgResponseTime: 0,
+        avgMessageLength: 0,
+        initiativeRate: 0,
+        moodPattern: {},
+        stressKeywords: [],
+        occupation: null,
+        hobbies: [],
+        timezone: null,
+        totalMessages: 0,
+        lastActive: now.toISOString(),
+        daysSinceFirst: 0,
+      };
+
+      let girlfriendParams = getDefaultParameters();
+      let evolutionState = initializeEvolutionState();
+
+      if (userId) {
+        // 从数据库加载用户画像
+        const profileRow = db.prepare('SELECT * FROM user_profiles WHERE user_id = ?').get(userId) as any;
+        if (profileRow) {
+          try {
+            userProfile = JSON.parse(profileRow.behavior_json || '{}');
+            userProfile.occupation = profileRow.occupation;
+            userProfile.activeHours = JSON.parse(profileRow.active_hours || '[]');
+            userProfile.avgMessageLength = profileRow.avg_message_length || 0;
+            userProfile.initiativeRate = profileRow.initiative_rate || 0;
+            userProfile.moodPattern = JSON.parse(profileRow.mood_pattern || '{}');
+          } catch (e) {
+            console.error('Failed to parse user profile:', e);
+          }
+        }
+
+        // 从数据库加载女友参数
+        const paramsRow = db.prepare('SELECT * FROM girlfriend_params WHERE user_id = ?').get(userId) as any;
+        if (paramsRow) {
+          try {
+            girlfriendParams = JSON.parse(paramsRow.params_json || '{}');
+            evolutionState.evolutionStage = paramsRow.evolution_stage || 'learning';
+            evolutionState.stabilityScore = paramsRow.stability_score || 50;
+          } catch (e) {
+            console.error('Failed to parse girlfriend params:', e);
+          }
+        }
+
+        // 分析当前消息
+        const insight = analyzeMessage(message, now);
+        userProfile = updateUserPattern(userProfile, insight);
+        userProfile.totalMessages += 1;
+        userProfile.lastActive = now.toISOString();
+
+        // 更新数据库中的用户画像
+        db.prepare(`
+          INSERT OR REPLACE INTO user_profiles 
+          (user_id, behavior_json, occupation, active_hours, avg_message_length, initiative_rate, mood_pattern, last_updated)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          userId,
+          JSON.stringify(userProfile),
+          userProfile.occupation,
+          JSON.stringify(userProfile.activeHours),
+          userProfile.avgMessageLength,
+          userProfile.initiativeRate,
+          JSON.stringify(userProfile.moodPattern),
+          now.toISOString()
+        );
+
+        // 检查是否需要进化
+        if (shouldEvolve(evolutionState, userProfile, girlfriendParams)) {
+          const evolutionResult = performEvolution(evolutionState, userProfile, girlfriendParams);
+          girlfriendParams = evolutionResult.newParams;
+          evolutionState = evolutionResult.newEvolutionState;
+
+          // 保存进化记录
+          for (const change of evolutionResult.changes) {
+            db.prepare(`
+              INSERT INTO evolution_history 
+              (user_id, parameter, old_value, new_value, reason, confidence, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              userId,
+              change.parameter,
+              JSON.stringify(change.oldValue),
+              JSON.stringify(change.newValue),
+              change.reason,
+              change.confidence,
+              now.toISOString()
+            );
+          }
+
+          // 更新女友参数
+          db.prepare(`
+            INSERT OR REPLACE INTO girlfriend_params 
+            (user_id, params_json, evolution_stage, stability_score, last_evolution, next_evolution)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `).run(
+            userId,
+            JSON.stringify(girlfriendParams),
+            evolutionState.evolutionStage,
+            evolutionState.stabilityScore,
+            now.toISOString(),
+            evolutionState.nextCheckTime.toISOString()
+          );
+        }
+
+        // 调整女友参数基于用户特征
+        girlfriendParams = adjustParametersBasedOnUser(girlfriendParams, userProfile);
+      }
+
+      // 2. 检查是否在睡眠时间
+      if (isGirlfriendSleeping(girlfriendParams, hour)) {
+        const absenceMessage = generateAbsenceMessage(girlfriendParams, hour);
+        return NextResponse.json({
+          message: absenceMessage,
+          state: state,
+          stageTransition: null,
+          quality: 0,
+          isSleeping: true,
+        });
+      }
+
+      // 3. 分析消息质量
       const messageLength = message.length;
       const depth = Math.min(messageLength / 100, 1);
       const care = message.includes('你') || message.includes('怎么样') ? 0.6 : 0.2;
@@ -132,7 +267,7 @@ export async function POST(req: NextRequest) {
         stage: stateUpdate.newStage ?? state.stage,
       };
 
-      // 构建 context
+      // 4. 构建 context
       const stateDesc = `
 ## 当前关系状态
 - 关系天数: 第 ${newState.day} 天
@@ -145,7 +280,14 @@ export async function POST(req: NextRequest) {
 - 矛盾状态: ${getConflictDescription(newState.conflict)}
 `;
 
-      const systemPrompt = buildSystemPrompt(persona, newState.stage) + stateDesc;
+      // 添加女友状态描述
+      const girlfriendStateDesc = generateGirlfriendStateDescription(girlfriendParams, hour, isWeekend);
+      const replyStyleGuide = generateReplyStyleGuide(girlfriendParams);
+
+      const systemPrompt = buildSystemPrompt(persona, newState.stage) + 
+                          stateDesc + 
+                          `\n## 你的当前状态\n${girlfriendStateDesc}` +
+                          `\n## 你的回复风格\n${replyStyleGuide}`;
 
       // Gemini 消息历史
       const history = messages.slice(-15).map((m) => ({
@@ -174,11 +316,26 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // 5. 保存消息到数据库
+      if (userId) {
+        db.prepare(`
+          INSERT INTO messages (user_id, role, content, emotion_score, quality_score, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(userId, 'user', message, newState.mood, quality, now.toISOString());
+
+        db.prepare(`
+          INSERT INTO messages (user_id, role, content, emotion_score, quality_score, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(userId, 'assistant', assistantMessage, newState.mood, quality, now.toISOString());
+      }
+
       return NextResponse.json({
         message: assistantMessage,
         state: newState,
         stageTransition: stateUpdate.stageTransition || null,
         quality,
+        girlfriendParams: girlfriendParams,
+        evolutionStage: evolutionState.evolutionStage,
       });
     }
 

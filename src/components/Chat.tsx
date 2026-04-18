@@ -78,6 +78,7 @@ export default function Chat({ persona, initialState, userId, onReset, onLogout 
           state,
           messages: newMessages,
           message: userMessage,
+          userId: userId,
         }),
       });
       const data = await res.json();
@@ -148,12 +149,17 @@ export default function Chat({ persona, initialState, userId, onReset, onLogout 
       {/* 状态面板 */}
       {showState && (
         <div className="px-4 py-3 border-b border-zinc-900">
-          <div className="grid grid-cols-5 gap-3 text-center">
+          <div className="grid grid-cols-5 gap-3 text-center mb-4">
             <StateBar label="亲密度" value={state.affinity} color="bg-rose-500" />
             <StateBar label="信任度" value={state.trust} color="bg-blue-500" />
             <StateBar label="矛盾值" value={state.conflict} color="bg-amber-500" />
             <StateBar label="情绪" value={((state.mood + 1) / 2) * 100} color="bg-emerald-500" />
             <StateBar label="主动度" value={state.initiative} color="bg-violet-500" />
+          </div>
+          
+          <div className="text-xs text-zinc-500 space-y-1">
+            <p>📊 关系阶段: {STAGES[state.stage]?.name || '陌生人'}</p>
+            <p>📅 第 {state.day} 天</p>
           </div>
         </div>
       )}

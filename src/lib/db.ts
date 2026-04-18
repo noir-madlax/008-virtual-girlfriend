@@ -79,5 +79,42 @@ function initSchema(db: Database.Database) {
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
+
+    -- 用户行为画像
+    CREATE TABLE IF NOT EXISTS user_profiles (
+      user_id INTEGER PRIMARY KEY,
+      behavior_json TEXT DEFAULT '{}',
+      occupation TEXT,
+      active_hours TEXT DEFAULT '[]',
+      avg_message_length REAL DEFAULT 0,
+      initiative_rate REAL DEFAULT 0,
+      mood_pattern TEXT DEFAULT '{}',
+      last_updated TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    -- 女友动态参数
+    CREATE TABLE IF NOT EXISTS girlfriend_params (
+      user_id INTEGER PRIMARY KEY,
+      params_json TEXT DEFAULT '{}',
+      evolution_stage TEXT DEFAULT 'learning',
+      stability_score REAL DEFAULT 50,
+      last_evolution TEXT DEFAULT (datetime('now')),
+      next_evolution TEXT DEFAULT (datetime('now', '+1 day')),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    -- 进化历史
+    CREATE TABLE IF NOT EXISTS evolution_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      parameter TEXT NOT NULL,
+      old_value TEXT,
+      new_value TEXT,
+      reason TEXT,
+      confidence REAL,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
   `);
 }
