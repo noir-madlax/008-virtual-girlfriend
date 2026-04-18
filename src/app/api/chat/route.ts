@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generatePersona, UserAnswers, buildSystemPrompt, PersonaProfile } from '@/lib/persona';
+import { generatePersonaWithLLM } from '@/lib/enhanced-persona';
 import {
   updateState,
   calculateQuality,
@@ -80,7 +81,17 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '缺少参数' }, { status: 400 });
       }
 
-      const persona = generatePersona(answers);
+      // 使用增强版人格生成器
+      let persona: PersonaProfile;
+      try {
+        // 尝试使用LLM生成个性化人格
+        persona = await generatePersonaWithLLM(answers);
+      } catch (error) {
+        console.error('LLM人格生成失败，使用备用方案:', error);
+        // 如果LLM失败，使用原来的规则引擎
+        persona = generatePersona(answers);
+      }
+
       const state: EmotionalState = {
         affinity: 10,
         trust: 15,
