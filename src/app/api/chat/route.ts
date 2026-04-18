@@ -274,7 +274,11 @@ export async function POST(req: NextRequest) {
           state.mood = Math.max(-0.5, state.mood - 0.3); // 情绪下降
           state.initiative = Math.max(0, state.initiative - 10); // 主动度下降
           
-          console.log('女友有起床气：情绪下降，主动度下降');
+          // 添加起床气标记，用于调整回复风格
+          girlfriendParams.specialModes.grumpyMode = true; // 起床气模式
+          girlfriendParams.specialModes.grumpyUntil = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30分钟后恢复
+          
+          console.log('女友有起床气：情绪下降，主动度下降，进入起床气模式');
         } else {
           const absenceMessage = generateAbsenceMessage(girlfriendParams, hour);
           return NextResponse.json({
@@ -292,18 +296,30 @@ export async function POST(req: NextRequest) {
         // 1. 检查是否发送了多条消息（连续发送3条以上）
         const recentUserMessages = messages.filter(m => m.role === 'user').slice(-5);
         if (recentUserMessages.length >= 3) {
+          console.log('连续发送多条消息，可以吵醒');
           return true;
         }
         
-        // 2. 检查是否包含吵醒关键词
-        const wakeUpKeywords = ['醒醒', '起床', '紧急', '重要', '快', '急', '马上', '立刻', '现在'];
+        // 2. 检查是否包含吵醒关键词（优化版）
+        const wakeUpKeywords = [
+          // 直接吵醒关键词
+          '醒醒', '起床', '醒来', '快醒', '别睡了', '起来',
+          // 紧急关键词
+          '紧急', '重要', '急', '快', '马上', '立刻', '现在',
+          // 撒娇/亲密关键词
+          '想你', '想见你', '陪我', '跟我说话', '聊天',
+          // 关心关键词
+          '你还好吗', '没事吧', '怎么了', '发生什么',
+        ];
+        
         for (const keyword of wakeUpKeywords) {
           if (currentMessage.includes(keyword)) {
+            console.log(`包含吵醒关键词: ${keyword}`);
             return true;
           }
         }
         
-        // 3. 检查是否发送了紧急/重要消息
+        // 3. 检查是否发送了紧急/重要消息（正则表达式）
         const urgentPatterns = [
           /紧急/,
           /重要/,
@@ -315,23 +331,38 @@ export async function POST(req: NextRequest) {
           /醒醒/,
           /起床/,
           /醒来/,
+          /想你/,
+          /想见你/,
+          /陪我/,
+          /跟我说话/,
+          /聊天/,
+          /你还好吗/,
+          /没事吧/,
+          /怎么了/,
+          /发生什么/,
         ];
         
         for (const pattern of urgentPatterns) {
           if (pattern.test(currentMessage)) {
+            console.log(`匹配吵醒模式: ${pattern}`);
             return true;
           }
         }
         
-        // 4. 检查是否发送了多次消息（在过去5分钟内）
-        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-        const recentMessages = messages.filter(m => {
-          if (m.role !== 'user') return false;
-          // 这里需要根据消息时间戳判断，但当前没有时间戳
-          // 暂时返回false，后续可以改进
-          return false;
-        });
+        // 4. 检查消息长度（长消息更容易吵醒）
+        if (currentMessage.length > 20) {
+          console.log('消息较长，可能吵醒');
+          return true;
+        }
         
+        // 5. 检查是否包含感叹号或问号（情绪强烈）
+        if (currentMessage.includes('！') || currentMessage.includes('!') || 
+            currentMessage.includes('？') || currentMessage.includes('?')) {
+          console.log('包含感叹号或问号，可能吵醒');
+          return true;
+        }
+        
+        console.log('不符合吵醒条件');
         return false;
       }
 

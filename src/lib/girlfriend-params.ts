@@ -42,6 +42,12 @@ export interface GirlfriendParameters {
     nightOwlMode: boolean;  // 夜猫子模式
     busyScheduleMode: boolean; // 忙碌日程模式
     emotionalSupportMode: boolean; // 情感支持模式
+    grumpyMode: boolean; // 起床气模式
+    grumpyUntil: string; // 起床气结束时间
+    coquetryMode: boolean; // 撒娇模式
+    angryMode: boolean; // 生气模式
+    happyMode: boolean; // 开心模式
+    caringMode: boolean; // 关心模式
   };
 }
 
@@ -79,6 +85,12 @@ export function getDefaultParameters(): GirlfriendParameters {
       nightOwlMode: false,
       busyScheduleMode: false,
       emotionalSupportMode: false,
+      grumpyMode: false,
+      grumpyUntil: '',
+      coquetryMode: false,
+      angryMode: false,
+      happyMode: false,
+      caringMode: false,
     },
   };
 }
