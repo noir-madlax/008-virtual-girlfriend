@@ -115,6 +115,11 @@ export async function POST(req: NextRequest) {
         userId?: number;
       };
 
+      console.log('收到聊天请求:');
+      console.log('  userId:', userId);
+      console.log('  userId类型:', typeof userId);
+      console.log('  message:', message);
+
       if (!persona || !state || !message) {
         return NextResponse.json({ error: '缺少参数' }, { status: 400 });
       }
