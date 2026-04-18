@@ -206,6 +206,7 @@ export async function POST(req: NextRequest) {
             avg_message_length: userProfile.avgMessageLength,
             initiative_rate: userProfile.initiativeRate,
             mood_pattern: JSON.stringify(userProfile.moodPattern),
+            total_messages: userProfile.totalMessages,
           });
           console.log('用户画像更新成功');
         } catch (e) {

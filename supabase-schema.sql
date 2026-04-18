@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
   avg_message_length REAL DEFAULT 0,
   initiative_rate REAL DEFAULT 0,
   mood_pattern TEXT DEFAULT '{}',
+  total_messages INTEGER DEFAULT 0,
   last_updated TIMESTAMPTZ DEFAULT NOW()
 );
 
