@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getUserProfile, getGirlfriendParams, getEvolutionHistory } from '@/lib/supabase-db';
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,61 +10,63 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: '缺少 userId 参数' }, { status: 400 });
     }
 
-    const db = getDb();
+    const userIdNum = parseInt(userId);
+    if (isNaN(userIdNum)) {
+      return NextResponse.json({ error: 'userId 必须是数字' }, { status: 400 });
+    }
 
     // 获取用户画像
-    const profileRow = db.prepare('SELECT * FROM user_profiles WHERE user_id = ?').get(userId) as any;
     let userProfile = null;
-    if (profileRow) {
-      try {
+    try {
+      const profileData = await getUserProfile(userIdNum);
+      if (profileData) {
         userProfile = {
-          behavior: JSON.parse(profileRow.behavior_json || '{}'),
-          occupation: profileRow.occupation,
-          activeHours: JSON.parse(profileRow.active_hours || '[]'),
-          avgMessageLength: profileRow.avg_message_length,
-          initiativeRate: profileRow.initiative_rate,
-          moodPattern: JSON.parse(profileRow.mood_pattern || '{}'),
-          lastUpdated: profileRow.last_updated,
+          behavior: JSON.parse(profileData.behavior_json || '{}'),
+          occupation: profileData.occupation,
+          activeHours: JSON.parse(profileData.active_hours || '[]'),
+          avgMessageLength: profileData.avg_message_length,
+          initiativeRate: profileData.initiative_rate,
+          moodPattern: JSON.parse(profileData.mood_pattern || '{}'),
+          lastUpdated: profileData.last_updated,
         };
-      } catch (e) {
-        console.error('Failed to parse user profile:', e);
       }
+    } catch (e) {
+      console.error('Failed to get user profile:', e);
     }
 
     // 获取女友参数
-    const paramsRow = db.prepare('SELECT * FROM girlfriend_params WHERE user_id = ?').get(userId) as any;
     let girlfriendParams = null;
-    if (paramsRow) {
-      try {
+    try {
+      const paramsData = await getGirlfriendParams(userIdNum);
+      if (paramsData) {
         girlfriendParams = {
-          params: JSON.parse(paramsRow.params_json || '{}'),
-          evolutionStage: paramsRow.evolution_stage,
-          stabilityScore: paramsRow.stability_score,
-          lastEvolution: paramsRow.last_evolution,
-          nextEvolution: paramsRow.next_evolution,
+          params: JSON.parse(paramsData.params_json || '{}'),
+          evolutionStage: paramsData.evolution_stage,
+          stabilityScore: paramsData.stability_score,
+          lastEvolution: paramsData.last_evolution,
+          nextEvolution: paramsData.next_evolution,
         };
-      } catch (e) {
-        console.error('Failed to parse girlfriend params:', e);
       }
+    } catch (e) {
+      console.error('Failed to get girlfriend params:', e);
     }
 
     // 获取进化历史
-    const historyRows = db.prepare(`
-      SELECT * FROM evolution_history 
-      WHERE user_id = ? 
-      ORDER BY created_at DESC 
-      LIMIT 10
-    `).all(userId) as any[];
-
-    const evolutionHistory = historyRows.map(row => ({
-      id: row.id,
-      parameter: row.parameter,
-      oldValue: JSON.parse(row.old_value || 'null'),
-      newValue: JSON.parse(row.new_value || 'null'),
-      reason: row.reason,
-      confidence: row.confidence,
-      createdAt: row.created_at,
-    }));
+    let evolutionHistory = [];
+    try {
+      const historyData = await getEvolutionHistory(userIdNum, 10);
+      evolutionHistory = historyData.map((row: any) => ({
+        id: row.id,
+        parameter: row.parameter,
+        oldValue: JSON.parse(row.old_value || 'null'),
+        newValue: JSON.parse(row.new_value || 'null'),
+        reason: row.reason,
+        confidence: row.confidence,
+        createdAt: row.created_at,
+      }));
+    } catch (e) {
+      console.error('Failed to get evolution history:', e);
+    }
 
     return NextResponse.json({
       userProfile,

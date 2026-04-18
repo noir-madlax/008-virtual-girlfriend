@@ -10,7 +10,7 @@ import {
   EmotionalState,
   InteractionInput,
 } from '@/lib/state-machine';
-import { getDb } from '@/lib/db';
+import { getUserProfile, updateUserProfile, getGirlfriendParams, updateGirlfriendParams, saveEvolutionHistory, saveMessage } from '@/lib/supabase-db';
 import { analyzeMessage, updateUserPattern, UserBehaviorPattern } from '@/lib/user-profile-extractor';
 import { adjustParametersBasedOnUser, GirlfriendParameters, getDefaultParameters, generateGirlfriendStateDescription, generateReplyStyleGuide } from '@/lib/girlfriend-params';
 import { shouldEvolve, performEvolution, EvolutionState, initializeEvolutionState, generateAbsenceMessage, isGirlfriendSleeping } from '@/lib/evolution';
@@ -108,7 +108,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '缺少参数' }, { status: 400 });
       }
 
-      const db = getDb();
       const now = new Date();
       const hour = now.getHours();
       const dayOfWeek = now.getDay();
@@ -135,31 +134,35 @@ export async function POST(req: NextRequest) {
       let evolutionState = initializeEvolutionState();
 
       if (userId) {
-        // 从数据库加载用户画像
-        const profileRow = db.prepare('SELECT * FROM user_profiles WHERE user_id = ?').get(userId) as any;
-        if (profileRow) {
-          try {
-            userProfile = JSON.parse(profileRow.behavior_json || '{}');
-            userProfile.occupation = profileRow.occupation;
-            userProfile.activeHours = JSON.parse(profileRow.active_hours || '[]');
-            userProfile.avgMessageLength = profileRow.avg_message_length || 0;
-            userProfile.initiativeRate = profileRow.initiative_rate || 0;
-            userProfile.moodPattern = JSON.parse(profileRow.mood_pattern || '{}');
-          } catch (e) {
-            console.error('Failed to parse user profile:', e);
+        // 从Supabase加载用户画像
+        try {
+          const profileData = await getUserProfile(userId);
+          if (profileData) {
+            userProfile = {
+              ...userProfile,
+              ...JSON.parse(profileData.behavior_json || '{}'),
+              occupation: profileData.occupation,
+              activeHours: JSON.parse(profileData.active_hours || '[]'),
+              avgMessageLength: profileData.avg_message_length || 0,
+              initiativeRate: profileData.initiative_rate || 0,
+              moodPattern: JSON.parse(profileData.mood_pattern || '{}'),
+              lastUpdated: profileData.last_updated,
+            };
           }
+        } catch (e) {
+          console.error('Failed to load user profile:', e);
         }
 
-        // 从数据库加载女友参数
-        const paramsRow = db.prepare('SELECT * FROM girlfriend_params WHERE user_id = ?').get(userId) as any;
-        if (paramsRow) {
-          try {
-            girlfriendParams = JSON.parse(paramsRow.params_json || '{}');
-            evolutionState.evolutionStage = paramsRow.evolution_stage || 'learning';
-            evolutionState.stabilityScore = paramsRow.stability_score || 50;
-          } catch (e) {
-            console.error('Failed to parse girlfriend params:', e);
+        // 从Supabase加载女友参数
+        try {
+          const paramsData = await getGirlfriendParams(userId);
+          if (paramsData) {
+            girlfriendParams = JSON.parse(paramsData.params_json || '{}');
+            evolutionState.evolutionStage = paramsData.evolution_stage || 'learning';
+            evolutionState.stabilityScore = paramsData.stability_score || 50;
           }
+        } catch (e) {
+          console.error('Failed to load girlfriend params:', e);
         }
 
         // 分析当前消息
@@ -168,21 +171,19 @@ export async function POST(req: NextRequest) {
         userProfile.totalMessages += 1;
         userProfile.lastActive = now.toISOString();
 
-        // 更新数据库中的用户画像
-        db.prepare(`
-          INSERT OR REPLACE INTO user_profiles 
-          (user_id, behavior_json, occupation, active_hours, avg_message_length, initiative_rate, mood_pattern, last_updated)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          userId,
-          JSON.stringify(userProfile),
-          userProfile.occupation,
-          JSON.stringify(userProfile.activeHours),
-          userProfile.avgMessageLength,
-          userProfile.initiativeRate,
-          JSON.stringify(userProfile.moodPattern),
-          now.toISOString()
-        );
+        // 更新Supabase中的用户画像
+        try {
+          await updateUserProfile(userId, {
+            behavior_json: JSON.stringify(userProfile),
+            occupation: userProfile.occupation,
+            active_hours: JSON.stringify(userProfile.activeHours),
+            avg_message_length: userProfile.avgMessageLength,
+            initiative_rate: userProfile.initiativeRate,
+            mood_pattern: JSON.stringify(userProfile.moodPattern),
+          });
+        } catch (e) {
+          console.error('Failed to update user profile:', e);
+        }
 
         // 检查是否需要进化
         if (shouldEvolve(evolutionState, userProfile, girlfriendParams)) {
@@ -191,35 +192,27 @@ export async function POST(req: NextRequest) {
           evolutionState = evolutionResult.newEvolutionState;
 
           // 保存进化记录
-          for (const change of evolutionResult.changes) {
-            db.prepare(`
-              INSERT INTO evolution_history 
-              (user_id, parameter, old_value, new_value, reason, confidence, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?)
-            `).run(
-              userId,
-              change.parameter,
-              JSON.stringify(change.oldValue),
-              JSON.stringify(change.newValue),
-              change.reason,
-              change.confidence,
-              now.toISOString()
-            );
-          }
+          try {
+            for (const change of evolutionResult.changes) {
+              await saveEvolutionHistory(userId, {
+                parameter: change.parameter,
+                old_value: JSON.stringify(change.oldValue),
+                new_value: JSON.stringify(change.newValue),
+                reason: change.reason,
+                confidence: change.confidence,
+              });
+            }
 
-          // 更新女友参数
-          db.prepare(`
-            INSERT OR REPLACE INTO girlfriend_params 
-            (user_id, params_json, evolution_stage, stability_score, last_evolution, next_evolution)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `).run(
-            userId,
-            JSON.stringify(girlfriendParams),
-            evolutionState.evolutionStage,
-            evolutionState.stabilityScore,
-            now.toISOString(),
-            evolutionState.nextCheckTime.toISOString()
-          );
+            // 更新女友参数
+            await updateGirlfriendParams(userId, {
+              params_json: JSON.stringify(girlfriendParams),
+              evolution_stage: evolutionState.evolutionStage,
+              stability_score: evolutionState.stabilityScore,
+              next_evolution: evolutionState.nextCheckTime.toISOString(),
+            });
+          } catch (e) {
+            console.error('Failed to save evolution data:', e);
+          }
         }
 
         // 调整女友参数基于用户特征
@@ -316,17 +309,14 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 5. 保存消息到数据库
+      // 5. 保存消息到Supabase
       if (userId) {
-        db.prepare(`
-          INSERT INTO messages (user_id, role, content, emotion_score, quality_score, created_at)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `).run(userId, 'user', message, newState.mood, quality, now.toISOString());
-
-        db.prepare(`
-          INSERT INTO messages (user_id, role, content, emotion_score, quality_score, created_at)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `).run(userId, 'assistant', assistantMessage, newState.mood, quality, now.toISOString());
+        try {
+          await saveMessage(userId, 'user', message, newState.mood, quality);
+          await saveMessage(userId, 'assistant', assistantMessage, newState.mood, quality);
+        } catch (e) {
+          console.error('Failed to save messages:', e);
+        }
       }
 
       return NextResponse.json({
