@@ -27,6 +27,7 @@ export async function GET(req: NextRequest) {
           avgMessageLength: profileData.avg_message_length,
           initiativeRate: profileData.initiative_rate,
           moodPattern: JSON.parse(profileData.mood_pattern || '{}'),
+          totalMessages: profileData.total_messages,
           lastUpdated: profileData.last_updated,
         };
       }
