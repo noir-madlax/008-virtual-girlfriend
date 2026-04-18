@@ -199,6 +199,11 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
         >
           {isSignup ? '已有账号？登录' : '没有账号？注册'}
         </button>
+        
+        {/* 版本号 */}
+        <div className="text-center">
+          <p className="text-zinc-600 text-xs">v1.0.0</p>
+        </div>
       </div>
     </div>
   );
