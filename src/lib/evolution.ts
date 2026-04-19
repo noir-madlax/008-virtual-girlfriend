@@ -65,12 +65,12 @@ export function shouldEvolve(
   console.log('  稳定性评分:', evolutionState.stabilityScore);
   console.log('  进化阶段:', evolutionState.evolutionStage);
   
-  // 1. 检查时间（降低门槛：从24小时改为1小时）
-  if (now < evolutionState.nextCheckTime) {
-    console.log('时间检查不满足，下次检查时间:', evolutionState.nextCheckTime);
-    return false;
-  }
-  console.log('时间检查通过');
+  // 1. 检查时间（暂时禁用，确保能触发）
+  // if (now < evolutionState.nextCheckTime) {
+  //   console.log('时间检查不满足，下次检查时间:', evolutionState.nextCheckTime);
+  //   return false;
+  // }
+  console.log('时间检查已禁用');
   
   // 2. 检查数据充足性（降低门槛：从10条改为5条）
   if (userProfile.totalMessages < 5) {
