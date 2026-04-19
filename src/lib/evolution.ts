@@ -122,6 +122,12 @@ export function shouldEvolve(
     return true;
   }
   
+  // 9. 如果消息数超过5条，也触发进化（调试用）
+  if (userProfile.totalMessages >= 5) {
+    console.log('消息数超过5条，触发进化（调试用）');
+    return true;
+  }
+  
   console.log('不满足进化条件');
   return false;
 }
