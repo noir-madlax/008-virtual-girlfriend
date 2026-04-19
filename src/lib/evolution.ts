@@ -109,10 +109,16 @@ export function shouldEvolve(
     console.log('消息数超过20条，强制触发进化');
     return true;
   }
-  console.log('强制进化条件未满足');
+  
+  // 7. 如果消息数超过50条，也触发进化
+  if (userProfile.totalMessages >= 50) {
+    console.log('消息数超过50条，触发进化');
+    return true;
+  }
   
   console.log('不满足进化条件');
   return false;
+}
 }
 
 // 检测新的用户特征
