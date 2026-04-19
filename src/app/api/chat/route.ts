@@ -285,11 +285,44 @@ export async function POST(req: NextRequest) {
           
           console.log('女友有起床气：情绪下降，主动度下降，进入起床气模式');
         } else {
+          // 即使不能被吵醒，也执行状态更新逻辑
+          console.log('女友在睡眠状态，不能被吵醒，但执行状态更新');
+          
+          // 分析消息质量
+          const messageLength = message.length;
+          const depth = Math.min(messageLength / 100, 1);
+          const care = message.includes('你') || message.includes('怎么样') ? 0.6 : 0.2;
+          const quality = calculateQuality({ responseTime: 0.5, depth, care });
+
+          const input: InteractionInput = {
+            quality,
+            responseTime: 0.5,
+            depth,
+            care,
+            isInitiative: true,
+            hasConflict: false,
+            hasRepair: false,
+          };
+
+          // 更新状态
+          const stateUpdate = updateState(state, input);
+
+          const newState: EmotionalState = {
+            affinity: Math.max(0, Math.min(100, state.affinity + stateUpdate.affinityDelta)),
+            trust: Math.max(0, Math.min(100, state.trust + stateUpdate.trustDelta)),
+            conflict: Math.max(0, Math.min(100, state.conflict + stateUpdate.conflictDelta)),
+            mood: Math.max(-1, Math.min(1, state.mood + stateUpdate.moodDelta)),
+            initiative: Math.max(0, Math.min(100, state.initiative + stateUpdate.initiativeDelta)),
+            day: state.day,
+            stage: stateUpdate.newStage ?? state.stage,
+          };
+
+          // 返回睡眠消息，但包含更新后的状态
           const absenceMessage = generateAbsenceMessage(girlfriendParams, hour);
           return NextResponse.json({
             message: absenceMessage,
-            state: state,
-            stageTransition: null,
+            state: newState, // 使用更新后的状态
+            stageTransition: stateUpdate.stageTransition || null,
             quality: 0,
             isSleeping: true,
           });
