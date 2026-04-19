@@ -128,8 +128,9 @@ export function shouldEvolve(
     return true;
   }
   
-  console.log('不满足进化条件');
-  return false;
+  // 10. 强制触发进化（调试用）
+  console.log('强制触发进化（调试用）');
+  return true;
 }
 }
 
