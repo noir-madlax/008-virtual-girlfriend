@@ -132,7 +132,6 @@ export function shouldEvolve(
   console.log('强制触发进化（调试用）');
   return true;
 }
-}
 
 // 检测新的用户特征
 function detectNewTraits(
