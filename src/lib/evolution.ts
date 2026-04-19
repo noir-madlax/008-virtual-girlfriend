@@ -58,35 +58,47 @@ export function shouldEvolve(
 ): boolean {
   const now = new Date();
   
-  // 1. 检查时间
+  // 1. 检查时间（降低门槛：从24小时改为1小时）
   if (now < evolutionState.nextCheckTime) {
+    console.log('时间检查不满足，下次检查时间:', evolutionState.nextCheckTime);
     return false;
   }
   
-  // 2. 检查数据充足性
-  if (userProfile.totalMessages < 10) {
+  // 2. 检查数据充足性（降低门槛：从10条改为5条）
+  if (userProfile.totalMessages < 5) {
+    console.log('数据不足，总消息数:', userProfile.totalMessages);
     return false; // 数据不足
   }
   
-  // 3. 检查稳定性
-  if (evolutionState.stabilityScore > 80) {
+  // 3. 检查稳定性（降低门槛：从80改为90）
+  if (evolutionState.stabilityScore > 90) {
     // 已经很稳定了，减少进化频率
-    evolutionState.nextCheckTime = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // 3天后
+    evolutionState.nextCheckTime = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 1天后
+    console.log('稳定性太高，减少进化频率');
     return false;
   }
   
   // 4. 检查是否有新的重要特征
   const newTraits = detectNewTraits(userProfile, evolutionState.observedTraits);
   if (newTraits.length > 0) {
+    console.log('检测到新特征，触发进化');
     return true;
   }
   
-  // 5. 检查参数漂移
+  // 5. 检查参数漂移（降低门槛：从0.3改为0.1）
   const drift = calculateParameterDrift(currentParams, userProfile);
-  if (drift > 0.3) {
+  if (drift > 0.1) {
+    console.log('参数漂移足够大，触发进化');
     return true;
   }
   
+  // 6. 强制进化：如果消息数超过20条，强制触发一次进化
+  if (userProfile.totalMessages >= 20 && evolutionState.evolutionStage === 'learning') {
+    console.log('消息数超过20条，强制触发进化');
+    return true;
+  }
+  
+  console.log('不满足进化条件');
   return false;
 }
 
